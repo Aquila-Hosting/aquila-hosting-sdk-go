@@ -1,0 +1,284 @@
+openapi: 3.1.0
+info:
+  title: Aquila game server SDK
+  version: "1"
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    The HTTP API a fleet server calls to report its lifecycle and read its own state.
+
+    The server finds the endpoint in `AQUILA_SDK_URL` and a token in the file named by
+    `AQUILA_SDK_TOKEN_FILE`. Kubernetes rotates that file, so read it on every call and
+    send it as `Authorization: Bearer <token>`.
+
+    Each server may make 10 calls a second, with bursts of 20. Request bodies are at
+    most 16 KiB.
+servers:
+  - url: "{sdkUrl}"
+    variables:
+      sdkUrl:
+        default: http://gs-operator-sdk.gs-operator-system.svc:9450
+        description: The value of AQUILA_SDK_URL. Always read it from the environment.
+security:
+  - token: []
+paths:
+  /v1/ready:
+    post:
+      operationId: ready
+      summary: Mark the server ready to be allocated
+      description: |
+        Moves a Starting or Reserved server to Ready. Calling it on a Ready server does
+        nothing. An Allocated server returns to the pool only through shutdown.
+      responses:
+        "204": { description: Done }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/allocate:
+    post:
+      operationId: allocate
+      summary: Mark the server allocated
+      description: For games that run their own lobby. Only a Ready or Reserved server can be allocated.
+      responses:
+        "204": { description: Done }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/reserve:
+    post:
+      operationId: reserve
+      summary: Hold the server back from allocation and scale-down
+      description: Only a Ready or Reserved server can be reserved. It returns to Ready when the time runs out.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReserveRequest" }
+      responses:
+        "204": { description: Done }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/shutdown:
+    post:
+      operationId: shutdown
+      summary: End the server
+      description: The fleet replaces it. Calling it again does nothing.
+      responses:
+        "204": { description: Done }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/health:
+    post:
+      operationId: health
+      summary: Report the server is alive
+      description: Call it more often than the fleet's health period, or the server is marked Unhealthy and replaced.
+      responses:
+        "204": { description: Done }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /v1/players:
+    put:
+      operationId: setPlayers
+      summary: Report the player count and capacity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Players" }
+      responses:
+        "204": { description: Done }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/labels/{key}:
+    put:
+      operationId: setLabel
+      summary: Set a label a matchmaker can select on
+      description: Stored as `sdk.aquilahosting.com/<key>`. Key and value follow Kubernetes label rules.
+      parameters:
+        - $ref: "#/components/parameters/Key"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ValueRequest" }
+      responses:
+        "204": { description: Done }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/annotations/{key}:
+    put:
+      operationId: setAnnotation
+      summary: Set an annotation
+      description: Stored as `sdk.aquilahosting.com/<key>`. The value is at most 4096 bytes.
+      parameters:
+        - $ref: "#/components/parameters/Key"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ValueRequest" }
+      responses:
+        "204": { description: Done }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/gameserver:
+    get:
+      operationId: getGameServer
+      summary: Read the server's current state
+      responses:
+        "200":
+          description: The server
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GameServer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/Internal" }
+  /v1/watch:
+    get:
+      operationId: watchGameServer
+      summary: Stream the server's state as it changes
+      description: |
+        Server-sent events. Each `data:` line holds a GameServer as JSON, sent once at
+        the start and again on every change. Comment lines (`: ping`) keep an idle
+        stream open. The stream ends when the server is deleted. Reconnect when it
+        breaks.
+      responses:
+        "200":
+          description: An event stream of GameServer objects
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+      description: The contents of the file named by AQUILA_SDK_TOKEN_FILE.
+  parameters:
+    Key:
+      name: key
+      in: path
+      required: true
+      schema: { type: string }
+      description: The key without the `sdk.aquilahosting.com/` prefix.
+  responses:
+    Invalid:
+      description: The request body or key is not valid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: The token is missing or not accepted
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The server's fleet runs without the SDK
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The server's state does not allow this call, such as Ready after Shutdown
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many calls
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Internal:
+      description: The server could not be updated. Retry.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    GameServer:
+      type: object
+      required: [name, state]
+      properties:
+        name: { type: string }
+        state:
+          type: string
+          description: |
+            Starting, Ready, Allocated, Reserved, Shutdown or Unhealthy in normal
+            operation. Other values can appear while the platform starts or replaces
+            the server.
+        address:
+          type: string
+          description: The address players connect to.
+        ports:
+          type: array
+          items: { $ref: "#/components/schemas/Port" }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+        annotations:
+          type: object
+          description: Only the annotations under `sdk.aquilahosting.com/`, which includes the `match` annotation the matchmaker writes.
+          additionalProperties: { type: string }
+        players: { $ref: "#/components/schemas/Players" }
+        reservedUntil:
+          type: string
+          format: date-time
+    Port:
+      type: object
+      required: [name, port, protocol]
+      properties:
+        name: { type: string }
+        port: { type: integer, format: int32 }
+        protocol:
+          type: string
+          enum: [TCP, UDP, TCPUDP]
+    Players:
+      type: object
+      required: [count, capacity]
+      properties:
+        count: { type: integer, format: int64, minimum: 0 }
+        capacity: { type: integer, format: int64, minimum: 0 }
+    ReserveRequest:
+      type: object
+      required: [seconds]
+      properties:
+        seconds: { type: integer, format: int64, minimum: 1, maximum: 3600 }
+    ValueRequest:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            [conflict, invalid, unauthorized, forbidden, rate_limited, internal]
+        message: { type: string }
